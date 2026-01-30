@@ -1,0 +1,79 @@
+---
+title: "Exercise 1.1 solution - IDS Hackathon 2025 (Edited to include in github coursework examples)"
+date: "`r format(Sys.time(), '%B %d, %Y | %H:%M:%S | %Z')`"
+output: 
+  flexdashboard::flex_dashboard:
+    theme: cosmo
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(haven)
+library(flexdashboard)
+library(leaflet)
+library(rnaturalearth)
+library(viridis)
+
+# load data and make labels appear instead of codes
+survey_df <- read_rds("./survey/meof_usa_survey_df.RDS") |> 
+  mutate(across(where(haven::is.labelled),
+                ~haven::as_factor(.x, levels = "labels")))
+
+# state-by-state response data
+state_df <- survey_df |> 
+  group_by(inputstate) |> 
+  summarize(
+    total_responses = n(),
+    w1_responses = sum(wave == 1)
+  )
+# double checking correct summing
+# sum(state_df$total_responses) == nrow(survey_df)
+# sum(state_df$w1_responses) == nrow(filter(survey_df, wave == 1))
+
+# load US State Boundaries from rnaturalearth
+state_boundaries <- ne_states(country = "united states of america")
+
+# join datasets for creating leaflet map downstream and add popup text column (popup uses html)
+us_states_joined <- left_join(state_boundaries, state_df, by = c("name" = "inputstate")) |> 
+  mutate(popup_text = paste0("<strong>", name, "</strong>",
+                             ":<br>Total survey responses: ", 
+                             total_responses, 
+                             "<br>Wave 1 survey responses: ", 
+                             w1_responses))
+
+# color palette
+pal <- colorNumeric(viridis::turbo(100, begin = 0.01, end = 0.9), domain = NULL)
+```
+
+Column {.sidebar}
+-------------------------
+
+### Authorship information
+
+Simon Marcell Matei -  mateism
+
+### Data source:
+
+Guess, Andrew M.; Barberá, Pablo; Yang, JungHwan; Munzert, Simon (2022): *Media Exposure and Opinion Formation in an Age of Information Overload (MEOF) – Survey U.S.A.* GESIS Data Archive, Cologne. ZA7895 Data file Version 1.0.0, [doi:10.4232/1.13980](https://doi.org/10.4232/1.13980).
+
+Column
+-----------------------
+
+### Total number of survey responses across all waves by state
+
+```{r}
+leaflet(us_states_joined) |>
+  flyTo(lng = -98.6, lat = 39.8, zoom = 3.5) |> # making the map zoom to the centre of the US
+  addProviderTiles(provider = "OpenStreetMap.Mapnik") |> 
+  addPolygons(color = ~pal(total_responses),
+              fillOpacity = 0.5,
+              popup = ~popup_text) |> 
+  addLegend("bottomleft",
+            pal = pal,
+            values = ~total_responses,
+            title = "Total responses"
+            )
+
+```
