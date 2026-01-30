@@ -1,0 +1,143 @@
+---
+title: "Assignment 4 - Reporting and communication"
+author: "Simon Marcell Matei - mateism"
+output: 
+  flexdashboard::flex_dashboard:
+    theme: cosmo
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(flexdashboard)
+library(leaflet)
+library(DT)
+library(plotly)
+
+# load data 
+turbines <- read_csv("./wind_turbine_df.csv")
+
+# select relevant columns and rows for interactive table
+turbines_minmax <- turbines |>
+  dplyr::group_by(project_name) |>
+  dplyr::reframe(
+    province_territory = first(province_territory),
+    total_project_capacity_mw = first(total_project_capacity_mw),
+    n_turbines_proj = max(turbine_number)
+  ) |>
+  (\(x) dplyr::bind_rows(
+    dplyr::slice_min(x, total_project_capacity_mw, n = 50),
+    dplyr::slice_max(x, total_project_capacity_mw, n = 50)
+  ))() |>
+  dplyr::arrange(total_project_capacity_mw)
+
+# create dataframes from full dataset for visualisation
+turbines_vis_prov <- turbines |> 
+  dplyr::group_by(province_territory) |> 
+  dplyr::summarise(n_turbines_prov = n()) |> 
+  arrange(n_turbines_prov)
+
+turbines_vis_year <- turbines |> 
+  dplyr::group_by(commissioning) |> 
+  dplyr::summarise(n_turbines_year = n()) |> 
+  arrange(commissioning)
+
+# create filtered dataframe for map
+turbines_sask <- turbines |> 
+  filter(province_territory == "Saskatchewan")
+```
+
+Column {data-height=1200}
+--------------------------------
+
+### Top and bottom 50 projects by total project capacity
+```{r}
+DT::datatable(
+  turbines_minmax,
+  colnames = c("Project Name", "Province/Territory", "Total Project Capacity (MW)", "Number of turbines")
+)
+```
+
+Column
+------------------------------
+
+```{r}
+turbines_province_plot <- ggplot(
+  turbines_vis_prov,
+  aes(x = reorder(province_territory,n_turbines_prov), 
+      y = n_turbines_prov,
+      text = paste("Province/Territory:", province_territory, "\nNumber of turbines:", n_turbines_prov)) #y on log axis to make small values hoverable and show tooltips
+  ) +
+  geom_col() +
+  scale_y_log10(breaks = c(1, 100, 1000, 2000, 3000)) +
+  labs(
+    title = "Number of turbines by province",
+    x = "Province/territory",
+    y = "Number of turbines (plotted on logarithmic axis)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 8, angle = 60, hjust = 1),
+        axis.text.y = element_text(size = 8),
+        axis.title.y = element_text(size = 10))
+
+turbines_year_plot <- ggplot(
+  turbines_vis_year, 
+  aes(x = commissioning, 
+      y = n_turbines_year,
+      text = paste("Year:", commissioning, "\nNumber of turbines:", n_turbines_year)) #y on log axis to make small values hoverable and show tooltips
+  ) +
+  geom_col() +
+  scale_y_log10(breaks = c(1, 100, 500, 1000)) +
+  labs(
+    title = "Number of turbines commissioned by year",
+    x = "Year",
+    y = "Number of turbines (plotted on logarithmic axis)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 8, angle = 60, hjust = 1),
+        axis.text.y = element_text(size = 8),
+        axis.title.y = element_text(size = 10))
+
+plotly::ggplotly(turbines_province_plot, tooltip = "text")
+plotly::ggplotly(turbines_year_plot, tooltip = "text")
+```
+
+Column {data-width=350}
+-------------------------
+
+### Saskatchewan wind turbines
+
+```{r}
+bolt_icon <- leaflet::makeAwesomeIcon(
+  icon = "bolt",
+  library = "fa",
+  markerColor = "#ff0000",
+  iconColor = "#ffff00"
+)
+
+leaflet::leaflet() |> 
+  leaflet::addTiles() |> 
+  leaflet::fitBounds(
+    lng1 = min(turbines_sask$longitude) - 3,
+    lat1 = min(turbines_sask$latitude) - 3,
+    lng2 = max(turbines_sask$longitude) + 3,
+    lat2 = max(turbines_sask$latitude) + 3
+  ) |>
+  leaflet::addAwesomeMarkers(lng = turbines_sask$longitude,
+                             lat = turbines_sask$latitude,
+                             icon =  bolt_icon,
+                             label = turbines_sask$project_name,
+                             popup = paste0("This turbine has a capacity of ", 
+                                            turbines_sask$turbine_rated_capacity_k_w, 
+                                            " kW. It is a(n) ",
+                                            turbines_sask$model,
+                                            " manufactured by ",
+                                            turbines_sask$manufacturer,
+                                            ". It was commissioned in ",
+                                            turbines_sask$commissioning,
+                                            ".")
+  )                      
+
+```
+

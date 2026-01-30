@@ -1,0 +1,221 @@
+---
+title: "Assignment 3 - Visualization"
+author: "Simon Marcell Matei - mateism"
+date: "`r format(Sys.time(), '%B %d, %Y | %H:%M:%S | %Z')`"
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    highlight: tango
+    number_sections: no
+    theme: cosmo
+    toc: no
+---
+
+```{=html}
+<style>
+div.answer {background-color:#f3f0ff; border-radius: 5px; padding: 20px;}
+</style>
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      eval = TRUE,
+                      error = FALSE,
+                      message = FALSE,
+                      warning = FALSE,
+                      comment = NA)
+```
+
+------------------------------------------------------------------------
+
+```{r, include = T}
+library(pacman)
+p_load(
+  tidyverse,
+  patchwork,
+  ggrepel,
+  ggtext,
+  scales
+)
+```
+
+<br>
+
+------------------------------------------------------------------------
+
+### Task 1 - Principles of good data visualization
+
+Over at [Our World in Data](https://ourworldindata.org/grapher/child-mortality-vs-health-expenditure) you will find a chart illustrating child mortality vs. health expenditure, 2000 to 2019, across countries.
+
+Download the data and reproduce the plot as closely as possible using only the 2019 data (i.e. the bubble scatter plot that you see when you move the slider to the right) and log scales. Your plot does not have to be interactive and the colors don't have to exactly match those from the original plot as long as your plot remains well readable and transports the same information as the original plot.
+
+```{r}
+#Read data from OWiD if it isn't loaded yet
+if (!exists("owid_df")){
+  owid_df <- read_csv("https://ourworldindata.org/grapher/child-mortality-vs-health-expenditure.csv?v=1&csvType=filtered&useColumnShortNames=true&time=2019&overlay=download-data") #specific link for only 2019 data displayed on the OWiD website
+}
+
+owid_df <- owid_df |> 
+  rename(
+    chex_pc = sh_xpd_chex_pp_cd,
+    child_mortality = observation_value__indicator_child_mortality_rate__sex_total__wealth_quintile_total__unit_of_measure_deaths_per_100_live_births
+  ) |> 
+  select(-c("time...8", "time...9", "time...10", "time...11"))
+```
+
+```{r}
+region_colours <- c(
+  "Africa" = "#A2559D",
+  "Asia" = "#00847E",
+  "Europe" = "#4D6A9C",
+  "North America" = "#E56E5B",
+  "Oceania" = "#38AABA",
+  "South America" = "#883039"
+) #I used the addon ColorZilla to find the codes on the OWiD page since my partial colour-blindness makes it hard to judge which shades work
+
+ggplot(owid_df, aes(x = chex_pc, y = child_mortality, colour = owid_region)) +
+  geom_point(aes(size = population_historical), alpha = 0.4) +
+  scale_size_area(
+    max_size = 10,
+    labels = label_number(scale_cut = cut_long_scale()), #making the legend not use scientific notation using the scales package
+    breaks = c(6e8, 1.4e9)
+    ) + 
+  scale_color_manual(values = region_colours, name = NULL) +
+  geom_text_repel(
+    aes(label = Entity),
+    show.legend = FALSE,
+    max.overlaps = 8,
+    segment.color = NA,
+    box.padding = 0.1,
+    size = 2.5) +
+  guides(
+    colour = guide_legend(order = 1),
+    size = guide_legend(order = 2)
+  ) +
+  scale_x_log10(breaks = c(50, 100, 200, 500, 1000, 2000, 5000, 10000)) +
+  scale_y_log10(breaks = c(0.2, 0.5, 1, 2, 5, 10, 20)) +
+  coord_cartesian(ylim = c(0.2,25)) +
+  labs(
+    title = "Child mortality vs. health spending, 2019",
+    subtitle = str_wrap("Healthcare expenditure per capita is measured in current international-$, which adjusts for price differences between countries. Under-five mortality is the share of newborns who die before reaching the age of five."),
+    caption = str_wrap("Data source: United Nations Inter-agency Group for Child Mortality Estimation (2025); World Health Organization Global Health Expenditure Database, via World Bank (2025) - https://ourworldindata.org/grapher/child-mortality-vs-health-expenditure?time=2019&overlay=sources"),
+    x = "Current health expenditure per capita, PPP (current international $; plotted on a logarithmic axis)",
+    y = str_wrap("Child mortality (deaths per 100 live births; plotted on a logarithmic axis)"),
+    colour = "",
+    size = "Population"
+  ) +
+  theme(
+    plot.title.position = "plot",
+    plot.title = element_text(size = 12, family = "serif", hjust = 0, vjust = 1),
+    plot.subtitle = element_text(size = 10, color = "#5B5B5B"), 
+    plot.caption = element_text(size = 9, color = "#5B5B5B", hjust = 0, vjust = 0),
+    
+    plot.background = element_rect(fill = "white",colour = "white"),
+    panel.background = element_rect(fill = "white", colour = "white"),
+    panel.grid.major = element_line(linetype = 2, color = "#DDDDDD"),
+    panel.grid.minor = element_blank(),
+    axis.title = element_text(size = 7),
+    axis.title.y = element_text(size = 6),
+    axis.text = element_text(size = 9, color = "#5B5B5B"),
+    axis.ticks = element_blank()
+    )
+```
+
+<br>
+
+------------------------------------------------------------------------
+
+### Task 2 - IMDb small multiples
+
+The file [`imdb_series_df.csv` (Dropbox link)](https://www.dropbox.com/scl/fi/llqz7l4cd8csclx8hyuds/imdb_series_df.csv.zip?rlkey=atkn330zyluai9yksgf66wmiq&dl=0) contains a data set on rating information on series and episodes from the InternetMovieDatabase. Use these data to create a small multiples plot that illustrates a relationship of your choice. You can work with the entire dataset or a subset. Your plot should adhere to the principles of good design. Add a telling title and caption that provides information on what the plot shows (and might tell) us.
+
+*Note:* The data binary is fairly large (\~93MB). It makes sense to download it first to your local drive and then import it into R. IMPORTANT: Make sure that the file is not synced to GitHub using `.gitignore`.
+
+```{r}
+if(!exists("imdb_df")){
+  imdb_df <- read_csv("./imdb_series_df.csv")
+}
+
+imdb_df_filtered <- imdb_df |> 
+  filter(start_year > 2000, 
+         start_year < 2021,
+         season_nr <= 20,
+         runtime_mins <= 240) |> #subsetting to avoid overly large dataset and issues with some shows using calendar years as season nr
+  drop_na()
+
+ggplot(imdb_df_filtered, aes(x = log10(num_votes), y = avg_rating)) +
+  geom_point(size = 0.1, alpha = 0.2, colour = "darkblue") +
+  geom_smooth(method = "lm", colour = "darkred") +
+  labs(
+    title = "Average ratings by number of ratings",
+    subtitle = "Between 2001-2020, up to season 20, and up to 240 minutes of runtime",
+    x = "Number of votes",
+    y = "Average rating",
+    caption = "More votes are correlated with more consistently higher ratings\nData Source: IMDB"
+  ) +
+  scale_x_continuous(
+    breaks = log10(c(10, 1000, 100000)),
+    labels = c("10", "1K", "100K")) +
+  theme_bw() +
+  facet_wrap(~ start_year, scales = "fixed")
+```
+
+<br>
+
+------------------------------------------------------------------------
+
+### Task 3 - Principles of good data visualization
+
+On [slide 78 of the lecture slides ("Dos and "Don'ts")](https://raw.githack.com/intro-to-data-science-25/lectures/main/08-visualization/08-visualization.html#88) you find a linked list of 20 statements expressing principles of good data visualization. Follow the links to learn more about them. Then, come up with another principle of good data visualization **that is not listed on the slide** and illustrate it following the instructions below:
+
+(i) Create a two-panel plot. The left panel shows a poorly designed plot (e.g., a 3D plot), the right panel shows a well-designed alternative using the same data. You are free to use whatever data you want to make your point.
+(ii) The title of the plot should be the name of the principle, e.g. "**Don't go 3D.**"
+(iii) A note embedded in the bottom of the plot should explain, in a few sentences, the principle illustrated in the plot and how the right is an improved over the left version.
+(iv) Embed the plot in your `.Rmd` but also provide it as a `.png` in your submission repo.
+
+```{r}
+#using OWiD data from exercise 1 for example data
+principles_df <- owid_df |> 
+  mutate(chex = population_historical * chex_pc)
+
+principles_plot_1 <- ggplot(principles_df, aes(x = log10(chex), y = child_mortality, colour = owid_region)) +
+  geom_point() +
+  scale_x_continuous(
+    breaks = log10(c(1e6, 1e9, 1e12)),
+    labels = c("1M", "1B", "1T")
+  ) +
+  labs(
+    subtitle = "Child mortality by total health expenditure in 2019",
+    x = "Total health expenditure (plotted on logarithmic axis)",
+    y = "Child mortality"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+principles_plot_2 <- ggplot(principles_df, aes(x = log10(chex_pc), y = child_mortality, colour = owid_region)) +
+  geom_point() +
+  scale_x_continuous(
+    breaks = log10(c(0, 1000, 10000)),
+    labels = c("0", "1000", "10000")
+  ) +
+  labs(
+    subtitle = "Child mortality by health expenditure per capita in 2019",
+    x = "Health expenditure per capita (plotted on logarithmic axis)",
+    y = "Child mortality", 
+    colour = "Region"
+  ) +
+  theme_minimal() +
+  theme(axis.title.y = element_blank())
+
+principles_plots <- principles_plot_1 + principles_plot_2 +
+  plot_layout(nrow = 1) +
+  plot_annotation(
+    title = "Don't use total values as a basis of comparison inappropriately",
+    caption = str_wrap("Using total values can be misleading when they depend on other variables, such as the size of a country's economy or population for example | Data Source: Our World in Data")
+  )
+
+ggsave("principles_plots.png", principles_plots, width = 15, height = 5, dpi = 300)
+
+knitr::include_graphics("./principles_plots.png") #including the correctly formatted graphic in the knitted HTML
+```

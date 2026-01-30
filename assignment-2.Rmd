@@ -1,0 +1,416 @@
+---
+title: "Assignment 2 - Web data"
+author: "Simon Marcell Matei - mateism"
+date: "`r format(Sys.time(), '%B %d, %Y | %H:%M:%S | %Z')`"
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    highlight: tango
+    number_sections: no
+    theme: cosmo
+    toc: no
+---
+
+```{=html}
+<style>
+div.answer {background-color:#f3f0ff; border-radius: 5px; padding: 20px;}
+
+div.comment {background-color:#F0F6FF; border-radius: 5px; padding: 20px;}
+</style>
+```
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      eval = TRUE,
+                      error = FALSE,
+                      message = FALSE,
+                      warning = FALSE,
+                      comment = NA)
+
+"#f3f0ff"
+```
+
+<!-- Do not forget to input your Github username in the YAML configuration up there -->
+
+------------------------------------------------------------------------
+
+```{r, include = T}
+library(pacman)
+pacman::p_load(tidyverse, rvest, xml2, janitor, knitr, httr, jsonlite)
+```
+
+<br>
+
+------------------------------------------------------------------------
+
+### Task 1 - Regular expressions and XPath with Friends
+
+Choose **one of the following** tasks (a) or (b) to complete:
+
+a)  Extract information about the first six UN Secretary Generals from a messy string using regular expressions and store the data in a data frame (`unsg_df`). The resulting data frame should be formatted with the following columns and data types:
+
+| Variable            | Data type |
+|---------------------|:---------:|
+| `name`              |  `<chr>`  |
+| `assumed_office`    | `<date>`  |
+| `left_office`       | `<date>`  |
+| `country_of_origin` |  `<chr>`  |
+| `un_regional_group` |  `<chr>`  |
+
+Render the data frame as HTML table.
+
+```{r}
+url_unsg <- read_html("https://en.wikipedia.org/wiki/Secretary-General_of_the_United_Nations")
+```
+
+```{r}
+unsg_table_raw <- html_table(url_unsg, header = T) |> 
+  pluck(2) |> 
+  clean_names()
+
+unsg_df <-  unsg_table_raw |> 
+  slice(2:12) |> 
+  select(-c(portrait, term_of_office_3, notes)) |> 
+  filter(no != "Acting") |> #making sure only numbered secretary generals are included
+  slice(1:6) |> 
+  select(-no) |> 
+  mutate(
+    name_born_died = str_extract(name_born_died, "[[:alpha:]|\\s|\\-]+"),
+    term_of_office_2 = str_extract(term_of_office_2, "[[:alnum:]|\\s]+"), #removing any additional characters that aren't part of the date
+    term_of_office = dmy(term_of_office),
+    term_of_office_2 = dmy(term_of_office_2)
+    )
+
+colnames(unsg_df) <- c("name", "assumed_office", "left_office", "country_of_origin", "un_regional_group")
+
+glimpse(unsg_df)
+
+kable(unsg_df)
+```
+
+<br>
+
+b)  The file `friends_info.xml` contains information about all episodes from the TV series Friends (accessible at <https://raw.githubusercontent.com/intro-to-data-science-24/labs/main/data/friends_info.xml>). Import the file using the `xml2::read_xml()` function. <i>(Hint: this is an XML document, so you will need to use the xml analogues of `rvest::read_html()`, `rvest::html_nodes()`, and `rvest::html_text()`)</i>.
+
+-   Use XPath expressions to extract the season, episode number, and title of all episodes. Store this information in a data frame (`episode_df`) and render the first 5 rows as an HTML table.
+-   Use XPath expressions to return the vector `directed_by_ross` providing the titles of all episodes directed by Ross himself (**David Schwimmer**).
+-   Create a chart that reports the frequency of episodes mentioning one of the six main characters (Ross, Rachel, Monica, Chandler, Joey, Phoebe) in the title.
+
+```{r}
+#doing b) as well for practice
+friends_data <- read_xml("https://raw.githubusercontent.com/intro-to-data-science-24/labs/main/data/friends_info.xml")
+```
+
+```{r}
+# season <- friends_data |>
+#   html_elements(xpath = "//season") |>
+#   html_text()
+# episode <- friends_data |>
+#   html_elements(xpath = "//episode_number") |>
+#   html_text()
+# title <- friends_data |>
+#   html_elements(xpath = "//title") |>
+#   html_text()
+# 
+# episode_df_test <- tibble(
+#   season = season,
+#   episode = episode,
+#   title = title)
+
+#Rewritten more elegantly after consulting slides from previous weeks about purrr::map() and asking GPT 5 how to make the code above more concise using it:
+paths <- c(
+  season  = "//season",
+  episode = "//episode_number",
+  title   = "//title"
+)
+
+episode_df <- paths |>
+  map(~ friends_data |> html_elements(xpath = .x) |> html_text()) |>
+  as_tibble()
+
+kable(episode_df[1:5,])
+
+#Getting episode titles directed by Ross
+directed_by_ross <- friends_data |> 
+  html_elements(xpath = "//directed_by[contains(text(), 'David Schwimmer')]/preceding-sibling::title") |> 
+  html_text()
+print("Episodes directed by Ross (David Schwimmer):")
+directed_by_ross
+
+#Chart showing frequency of different characters appearing in the title
+
+# character_df <- episode_df |>
+#   mutate(
+#     ross = str_detect(title, "Ross"), #words such as Cross shouldn't be mathced since str_detect is case sensitive unless specifed otherwise
+#     rachel = str_detect(title, "Rachel"),
+#     monica = str_detect(title, "Monica"),
+#     chandler = str_detect(title, "Chandler"),
+#     joey = str_detect(title, "Joey"),
+#     phoebe = str_detect(title, "Phoebe")
+#   ) |>
+#   select(ross, rachel, monica, chandler, joey, phoebe) |>
+#   mutate(
+#     ross_n = sum(ross),
+#     rachel_n = sum(rachel),
+#     monica_n = sum(monica),
+#     chandler_n = sum(chandler),
+#     joey_n = sum(joey),
+#     phoebe_n = sum(phoebe)
+#   ) |>
+#   select(ross_n, rachel_n, monica_n, chandler_n, joey_n, phoebe_n) |>
+#   slice(1)
+
+#Origianlly had the idea to do it more elegantly with map but couldn't figure it out at first so I coded it out to get the intuition of what needs to happen
+characters <- c("Ross", "Rachel", "Monica", "Chandler", "Joey", "Phoebe") 
+character_counts_df <- tibble(
+  character = characters,
+  n = map_int(characters, ~ sum(str_detect(episode_df$title, fixed(.x)), na.rm = TRUE))
+)
+
+ggplot(character_counts_df, aes(x = fct_reorder(character, n), y = n)) +
+  geom_col(colour = "black", fill = "navy") +
+  labs(
+    title = "Frequency of main characters in episode titles of Friends",
+    subtitle = "Across all 10 seasons",
+    x = "Character",
+    y = "Count"
+  ) +
+  scale_y_continuous(breaks = seq(0, 30, by = 4))
+```
+
+<br>
+
+------------------------------------------------------------------------
+
+### Task 2 - Scraping members of the European Parliament
+
+The European Parliament's website maintains a [full list of MEPs](https://www.europarl.europa.eu/meps/en/full-list/all). For this exercise, you will focus on scraping data from the HTML code, so please don't make use of the linked XML files.
+
+a)  Extract a data frame (`meps_df`) with the variables listed below, print the first 3 observations, and check the number of rows.
+
+| Variable | Data type | Description |
+|------------------------|:----------------------:|------------------------|
+| `name` | `<chr>` | Full name of MEP |
+| `ep_party_group` | `<chr>` | EP party group |
+| `country` | `<chr>` | Country of MEP |
+| `nat_party` | `<chr>` | National party of MEP |
+| `profile_url` | `<chr>` | URL linking to MEP profile |
+| `mep_id` | `<chr>` | MEP numeric identifier included as a path in `profile_url` |
+
+```{r}
+#An MEP was removed from the website as of 14 Oct. 2025 so the number of rows went from 719 to 718 after rerunning the code.
+url_mep <- read_html("https://www.europarl.europa.eu/meps/en/full-list/all")
+```
+
+```{r}
+meps_paths <- c(
+  name = "//div[contains(@class, 'erpl_title-h4')]",
+  ep_party_group = "//div/span[contains(@class, 'sln-additional-info')][1]",
+  country = "//div/span[contains(@class, 'sln-additional-info')][2]",
+  nat_party = "//div/span[contains(@class, 'sln-additional-info')][3]",
+  profile_url = "//a[contains(@class, 'erpl_member-list-item-content mb-3 t-y-block')]"
+)
+meps_df <- meps_paths |>
+  map(~ {
+    nodes <- url_mep |> html_elements(xpath = .x)
+    if (.x == meps_paths[["profile_url"]]) {
+      html_attr(nodes, "href")
+    } else {
+      html_text(nodes)
+    }
+  }) |>
+  as_tibble() |> 
+  mutate(mep_id = str_extract(profile_url, "[[:digit:]]+$"))
+
+head(meps_df, 3)
+print("Number of rows: ")
+nrow(meps_df)
+```
+
+<br>
+
+b)  Now, using the `profile_url` data in the table. Provide polite code that downloads the first 10 of the linked HTMLs to a local folder retaining the MEP IDs as file names.
+
+-   Explain why your code follows best practice of polite scraping by implementing at least three practices (bullet points are sufficient).
+-   Provide proof that the download was performed successfully by listing the file names and reporting the total number of files contained by the folder.
+-   Make sure that the folder itself is not synced to GitHub using `.gitignore`.
+
+```{r}
+folder <- "./html_mep_profiles/"
+dir.create(folder, recursive = TRUE)
+
+rvest_session <- rvest::session(url = "https://www.europarl.europa.eu",
+                                httr::add_headers(
+                                  `From` = "s.matei@students.hertie-school.org",
+                                  `UserAgent` = R.Version()$version.string
+                                  )
+                                )
+
+url_list <- meps_df$profile_url[1:10]
+names_for_files <- meps_df$mep_id[1:10]
+
+for (i in seq_along(url_list)) {
+  out_path <- file.path(folder, paste0(names_for_files[i], ".html"))
+  if (file.exists(out_path)) next
+
+  tryCatch({
+    # Navigate the session to the target URL. Then read HTML from the current session response and write to disk
+    rvest_session |> session_jump_to(url_list[i]) |> read_html() |> write_html(out_path)
+  }, error = function(e)
+    e
+  )
+
+  Sys.sleep(runif(1, 0, 2))
+}
+```
+
+::: answer
+Best practices of scraping used:
+
+-   Sleeping between requests to not bombard the server
+-   Storing files locally (and only downloading if the file doesn't exist yet) before any downstream parsing to reduce load on server
+-   Staying identifiable through using `rvest::session()`
+
+File names and nr. of files contained in the folder:
+
+Using the terminal and `tree` command-line utility
+
+``` directory-structure
+├── README.md
+├── assignment-2-mateism.Rproj
+├── assignment-2.Rmd
+├── assignment-2.html
+└── html_mep_profiles
+    ├── 113523.html
+    ├── 197400.html
+    ├── 197403.html
+    ├── 197490.html
+    ├── 256810.html
+    ├── 256820.html
+    ├── 256869.html
+    ├── 256956.html
+    ├── 256987.html
+    └── 257043.html
+```
+
+-   It contains 10 files
+:::
+
+<br>
+
+------------------------------------------------------------------------
+
+### Task 3 - Eat my shorts
+
+Write an R function `get_simpsons_quote()` that wraps around the Simpsons API at <https://thesimpsonsapi.com/>.\
+This function should:
+
+-   Fetch the JSON data from <https://thesimpsonsapi.com/api/characters?page=1>. Only consider the first page here and ignore the others.
+-   Accept the parameter `character`, which can be either a numeric ID or (part of) the character’s name.\
+-   Accept the parameter `show.names` (default `FALSE`). If set to `TRUE`, the function should return the vector of valid character names available on the first page.\
+-   If `show.names = FALSE`, the function should return a random phrase (`quote`) for the specified character.\
+-   If multiple names match, it should use the first match but issue a warning.\
+-   If no match is found, it should stop with a meaningful error.\
+-   Internally, the function should parse the JSON into a `data.frame` (e.g., with `dplyr`) and then filter depending on the `character` argument.
+
+The function should also return a meaningful message if `show.names = TRUE` (listing the available names) or if no quotes are available.
+
+Test the function!
+
+```{r, cache = TRUE, message=TRUE}
+get_simpsons_quote <- function(character_id, show.names = FALSE) {
+  
+  #checking for correctly specified arguments
+  if(is.na(character_id) | (!is.character(character_id) & !is.numeric(character_id))) {
+    stop("Argument character_id has to be numeric ID or (part of) character's name")
+  }
+  if(is.na(show.names) | !is.logical(show.names)) {
+    stop("Argument show.names must be logical value")
+  }
+  
+  #accessing the API and parsing the JSON
+  parsed_json <- GET("https://thesimpsonsapi.com/api/characters?page=1") |> 
+    content(as = "text") |> 
+    fromJSON() |> 
+    pluck(5) |>  #since we only need the data contained in page 1 and won't use the information in the other values
+    as_tibble()
+  
+  #finding the character(s) matching the input
+  matching_names <- character()
+  #finding match if numeric id is provided
+  if(is.numeric(character_id)) {
+    matching_names <- parsed_json |> 
+      filter(id == character_id) |> 
+      pull(name)
+  }
+  #finding match(es) if character type input is provided
+  if(is.character(character_id)) {
+    match_ids <- logical()
+    for(i in seq_along(parsed_json$name)) {
+      current_name <- parsed_json$name[i]
+      match_ids[i] <- str_detect(current_name, character_id)
+    }
+    matching_names <- parsed_json$name[match_ids]
+  }
+  #Generating error if no match is found
+  if(length(matching_names) == 0) {
+    stop("No matching characters found based on input specified")
+  }
+  
+  #generating quote to return
+  quote_to_return <- parsed_json |> 
+    filter(name == matching_names[1]) |> #using the first matching name to generate quote
+    select(phrases) |> #because of API call $phrases is a list column
+    unlist() |> 
+    sample(size = 1) |> 
+    unname()
+  
+  #returning quotes
+  if(show.names == FALSE) {
+    if(length(matching_names) == 1) {
+      return(quote_to_return)
+    } else if(length(matching_names) > 1) {
+      output_text <- paste0(quote_to_return, "\n\nWarning: quote generated for first matching character. Specify show.names = TRUE if interested in all matches")
+    }
+  }
+  #returning quotes and names
+  if(show.names == TRUE) {
+    valid_names <- paste0(parsed_json |> pull(name), collapse = "\n")
+    names_to_return <- paste0(matching_names, collapse = "\n")
+    output_text <- paste0(quote_to_return, "\n\nMatching characters (quote generated for first match):\n", names_to_return, "\n\nAll valid names on page 1:\n", valid_names)
+  }
+  cat(output_text, "\n")
+}
+```
+
+Testing the function
+
+```{r}
+
+get_simpsons_quote(character = "Homer", show.names = TRUE)
+
+get_simpsons_quote(character_id = 2)
+
+get_simpsons_quote(character_id = "Simpson")
+
+get_simpsons_quote(character_id = "Simpson", show.names = TRUE)
+
+# get_simpsons_quote(character_id = "asdfgh") #to test error
+```
+
+<br>
+
+------------------------------------------------------------------------
+
+### Bonus Task 3a (optional) - Eat my shorts Vol. 2
+
+Enhance the `get_simpsons_quote()` function to:
+
+-   Import **all character pages** from the Simpsons API (not just page 1).\
+-   Allow `show.names = TRUE` to return **all valid character names** across all pages.
+-   Add an additional argument meme (default FALSE). When meme = TRUE, the function should render a meme using the character’s image together with the randomly chosen quote. You may use packages like magick or a dedicated meme package in R to overlay the text on the image. The function should still return the quote text as output, but also display the generated meme.
+
+```{r, cache = TRUE, message=TRUE}
+# YOUR CODE HERE
+```
